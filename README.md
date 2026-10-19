@@ -15,3 +15,8 @@ Playwright checks (exit 0 = pass): counts match across Dashboard, Weekly summary
 ## Data and roles
 - All counts derive from each tenant's `leads` in `data.js` (`stats()` in `app.js`); there are no separate count fields.
 - Client vs. Andy permissions live in `POLICY` at the top of `app.js`.
+
+## Client-only copies
+    node scripts/build_client.js colby
+Builds a static copy for one tenant into `c/<slug>/` (slug kept in `scripts/clients.json`). It contains only that tenant's client-safe data plus `app.js`/`extras.js`; `admin.js` (admin views, role switcher, tenant picker, demo mode, revenue tile) is not copied, so `?role=`/`?tenant=` do nothing there. Rebuild after any change to `data.js`, `app.js`, `extras.js` or `styles.css`; `tests/check_portal.py` fails if the committed copy is stale or leaks admin code or other tenants.
+Note: the repo is public, so the slug is not a secret.

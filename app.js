@@ -1,17 +1,16 @@
-// Core app: state, rendering, client views, admin views. All data is EXAMPLE DATA (data.js).
+// Core app: state, rendering and client views (admin views live in admin.js). All data is EXAMPLE DATA (data.js).
 // Per-value example mark (subtle) + one banner per screen.
 const EX='<sup class="exm" title="Example data — made up for the prototype">ex</sup>';
 const EXBANNER='<div class="exbanner small"><b>Example data.</b> Every number and record here is made up for the prototype; values marked <sup class="exm">ex</sup> are examples.</div>';
 const P=new URLSearchParams(location.search);
-const S={tenant:P.get('tenant')||'colby',role:P.get('role')||'client',view:P.get('view')||'dashboard',openThread:P.get('thread'),demo:!!P.get('demo')};
-if(S.demo){S.tenant='avery';S.role='client';}
+// Client-safe defaults. Role/tenant/demo come only from admin.js in the prototype; a client copy is fixed to its one tenant.
+const S={tenant:TENANTS[0].id,role:'client',view:P.get('view')||'dashboard',openThread:P.get('thread'),demo:false};
 
 // Who may do what. Andy's decisions of 2026-10-17 (audit items 3 & 4). Flip a flag to change behaviour.
 const POLICY={
   clientCanEditReplies:false,   // 3a: false = client gets "Suggest a change" (goes to Andy, never sent). true = old "Edit → Save & send".
   clientEntersBaseline:false,   // 3b: false = Andy enters starting numbers (admin); client confirms or flags them.
   clientMarksAndySteps:false,   // 3c: false = Andy-owned setup steps are read-only status for the client.
-  revenueVisibleTo:['admin']    // 4: roles that see the "Est. revenue saved" tile. Never add 'client' (demo is a client view).
 };
 
 const $=s=>document.querySelector(s);
@@ -36,22 +35,16 @@ function botLog(t){return t.leads.map(l=>({t:l.when,by:'bot',thread:l.thread||[]
   text:l.bookedAt?`Estimate window booked: ${l.win}${l.type?` (${l.type})`:''}`:`Missed call → text sent${l.replied?' · caller replied, no booking yet':' · no reply yet'}`}));}
 const allLog=t=>[...t.log,...botLog(t)];
 const pendingCount=t=>t.approvals.length+t.questions.length+t.confirms.length+t.flags.length;
-const openRequests=()=>TENANTS.reduce((n,t)=>n+t.requests.filter(r=>r.status==='Open').length,0);
 
 const CLIENT_NAV=[['dashboard','Dashboard'],['approvals','Approvals','approvals'],['questions','Bot questions','questions'],['confirm','Confirm details','confirms'],['flags','Flagged items','flags'],['activity','Activity log'],['later','Coming later']];
-const ADMIN_NAV=[['overview','All tenants'],['requests','Client requests',openRequests],['settings','Bot settings'],['schedule','Schedule'],['rules','Approval rules'],['integrations','Integrations'],['tenantview','Client’s view (preview)']];
-
+// Extension points. admin.js (prototype only) fills these in; client copies keep the client-only defaults.
+const HOOKS={controls(){},nav:()=>CLIENT_NAV,navLabel:()=>'Client portal',banner:()=>'',extraTiles:()=>'',pilotExtra:()=>''};
 function render(){
-  const list=S.demo?TENANTS.filter(t=>t.demo):TENANTS; // demo never lists (or leaks) other tenants
-  if(!list.some(t=>t.id===S.tenant))S.tenant=list[0].id;
-  $('#tenantSel').innerHTML=list.map(t=>`<option value="${t.id}" ${t.id===S.tenant?'selected':''}>${esc(t.name)}${t.demo?' (demo)':t.fake?' (example)':''}</option>`).join('');
-  document.querySelectorAll('#roleSeg button').forEach(b=>b.classList.toggle('on',b.dataset.role===S.role));
-  document.body.classList.toggle('demo',S.demo);
-  $('#demoBtn').classList.toggle('hidden',S.role!=='admin'||S.demo);$('#exitDemo').classList.toggle('hidden',!S.demo);
-  const nav=S.role==='client'?CLIENT_NAV:ADMIN_NAV;
+  HOOKS.controls();
+  const nav=HOOKS.nav();
   if(!nav.some(n=>n[0]===S.view))S.view=nav[0][0];
   const t=T();
-  $('#nav').innerHTML=`<div class="sec">${S.role==='client'?'Client portal':'Admin (Andy only)'}</div>`+nav.map(([k,l,c])=>{const n=typeof c==='function'?c():c?t[c].length:0;return `<a data-v="${k}" class="${k===S.view?'on':''}">${l}${n?`<span class="cnt">${n}</span>`:''}</a>`}).join('');
+  $('#nav').innerHTML=`<div class="sec">${HOOKS.navLabel()}</div>`+nav.map(([k,l,c])=>{const n=typeof c==='function'?c():c?t[c].length:0;return `<a data-v="${k}" class="${k===S.view?'on':''}">${l}${n?`<span class="cnt">${n}</span>`:''}</a>`}).join('');
   $('#main').innerHTML=(VIEWS[S.view]||(()=>''))(t);
   window.scrollTo(0,0);navScroll();
 }
@@ -63,17 +56,13 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-v]');if(a){S.view=a.dataset.v;$('.top').classList.remove('open');render();return;}
   const b=e.target.closest('[data-act]');if(b){ACT[b.dataset.act](b.dataset.id,b);}
 });
-$('#tenantSel').onchange=e=>{S.tenant=e.target.value;render();};
-$('#roleSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;S.role=b.dataset.role;S.view=S.role==='client'?'dashboard':'overview';render();};
-$('#menuBtn').onclick=()=>{const o=$('.top').classList.toggle('open');$('#menuBtn').setAttribute('aria-expanded',o);};
 
 function tenantTag(t){return t.demo?' <span class="tag gray">Demo</span>':t.fake?' <span class="tag gray">Example tenant</span>':'';}
 function head(t,title,sub){
-  return `${S.role==='admin'?'<div class="banner admin small">Admin view — visible to Andy only. The client never sees these controls.</div>':''}
+  return `${HOOKS.banner()}
   ${t.paused?'<div class="banner paused small"><b>Bot paused.</b> Missed calls are not being texted back right now.</div>':''}
   <h1>${title}</h1><p class="sub">${esc(t.name)} · ${esc(t.loc)}${tenantTag(t)}${sub?' — '+sub:''}</p>${EXBANNER}`;
 }
-function adminHead(title,sub){return `<div class="banner admin small">Admin view — visible to Andy only.</div><h1>${title}</h1><p class="sub">${sub}</p>${EXBANNER}`;}
 const card=(inner,cls='')=>`<div class="card ${cls}">${inner}</div>`;
 const stat=(k,n,l)=>card(`<div class="stat" data-k="${k}"><div class="n"><span class="v">${n}</span>${EX}</div><div class="l">${l}</div></div>`);
 function thread(th){return th&&th.length?`<div class="sms">${th.map(([d,m,w])=>`<div class="msg ${d}">${esc(m)}<small>${w}</small></div>`).join('')}</div>`:'';}
@@ -122,57 +111,9 @@ const VIEWS={
   (L.length?L.map((l,i)=>card(`<div class="row"><div>${logRow(l)}</div><span class="muted small">${l.t}</span></div>${l.thread.length?`<details ${S.openThread==i?'open':''}><summary class="small muted">SMS thread (${l.thread.length} messages)</summary>${thread(l.thread)}</details>`:''}`)).join(''):card('<div class="empty">No activity yet.</div>'))+
   `<h2>Booked windows</h2>${bookingsTable(t)}`;
  },
- // ---------- ADMIN ----------
- overview(){
-  return adminHead('All tenants','Cross-tenant overview. Bots belong to Andy and run on each client’s behalf.')+
-  `<div class="card tw"><table><tr><th>Tenant</th><th>Status</th><th>Bot</th><th>Approvals</th><th>Questions</th><th>Flags</th><th>Requests</th><th>Log entries</th><th></th></tr>
-  ${TENANTS.map(t=>`<tr><td><b>${esc(t.name)}</b>${tenantTag(t)}<div class="small muted">${esc(t.loc)}</div></td><td><span class="tag ${t.fake?'gray':''}">${t.status}</span></td>
-  <td><label class="sw"><input type="checkbox" ${t.paused?'':'checked'} data-act="pause" data-id="${t.id}" aria-label="Bot running"><span></span></label> <span class="small">${t.paused?'Paused':'Running'}</span></td>
-  <td>${t.approvals.length}${EX}</td><td>${t.questions.length}${EX}</td><td>${t.flags.length}${EX}</td><td>${t.requests.filter(r=>r.status==='Open').length}${EX}</td><td>${allLog(t).length}${EX}</td><td><button class="b" data-act="goTenant" data-id="${t.id}">Manage</button></td></tr>`).join('')}</table></div>
-  <div class="card small muted">No pricing or billing shown — not decided. Payments and bookkeeping are out of scope.</div>`;
- },
- requests(){const rows=TENANTS.flatMap(t=>t.requests.map(r=>({...r,t})));
-  return adminHead('Client requests','Suggested reply changes, baseline flags and detail changes from clients. Nothing here was sent to a customer.')+
-  (rows.length?rows.map(r=>card(`<div class="row"><div><span class="tag warn">${r.kind}</span><b>${esc(r.t.name)}</b> · ${esc(r.ref)}${EX}</div><span class="tag ${r.status==='Open'?'blue':''}">${r.status}</span></div>
-   ${r.draft?`<div class="small muted" style="margin-top:6px">Bot’s draft (not sent):</div><div class="sms"><div class="msg out">${esc(r.draft)}</div></div>`:''}
-   <p style="margin:8px 0 0"><span class="small muted">Client’s note:</span> ${esc(r.note||'—')}</p><div class="small muted">${r.when}</div>
-   ${r.status==='Open'?`<div class="btns"><button class="b p" data-act="reqDone" data-id="${r.t.id}|${r.id}">Mark handled</button></div>`:''}`)).join(''):card('<div class="empty">No client requests.</div>'));
- },
- settings(t){const s=t.settings;
-  return head(t,'Bot settings','per-tenant')+
-  card(`<div class="row"><div><b>Bot status</b><div class="small muted">Pause stops all text-backs for this tenant.</div></div><label class="sw"><input type="checkbox" ${t.paused?'':'checked'} data-act="pause" data-id="${t.id}" aria-label="Bot running"><span></span></label></div>`)+
-  card(`<b>Workflow:</b> ${esc(t.workflow)}<h2>Text-back</h2>
-   <label class="small muted" for="delay">Send text within (minutes)</label><br><input type="number" id="delay" value="${s.delay}" style="width:90px">${EX}<br><br>
-   <label class="chk"><input type="checkbox" id="vm" ${s.vmPrompt?'checked':''}> Optional voicemail prompt (“leave a message, or hang up and you’ll get a text”)</label><br><br>
-   <label class="small muted" for="greet">First text (sent from the business number)</label><textarea id="greet">${esc(s.greeting)}</textarea>
-   <h2>Job types offered</h2>${s.jobTypes.map(j=>`<span class="tag blue">${esc(j)}</span>`).join('')}${EX}
-   <div class="btns"><button class="b p" data-act="saveSettings">Save</button></div>`)+
-  `<h2>Add-ons</h2>`+LATER.map(l=>card(`<div class="row"><div><b>${l.name}</b> <span class="tag gray">Coming later</span></div><label class="sw"><input type="checkbox" disabled aria-label="${l.name}"><span></span></label></div>`,'later')).join('');
- },
- schedule(t){const s=t.settings;
-  return head(t,'Schedule','when the bot runs and which windows it offers')+
-  card(`<label class="small muted" for="hrs">Bot active hours</label><br><input id="hrs" value="${esc(s.hours)}" style="width:100%">
-  <h2>Bookable windows</h2><div id="wins">${s.windows.map((w,i)=>`<div class="row" style="padding:4px 0"><span>${esc(w)}${EX}</span><button class="b r" data-act="delWin" data-id="${i}">Remove</button></div>`).join('')}</div>
-  <div class="btns"><input id="newWin" placeholder="e.g. Sat 8–11am"><button class="b" data-act="addWin">Add window</button></div>
-  <div class="btns"><button class="b p" data-act="saveSched">Save</button></div>`);
- },
- rules(t){const r=t.rules;
-  const rows=[['routineText','Routine missed-call text-back'],['routineBooking','Routine booking into an open window'],['pricing','Pricing questions'],['complaint','Complaints'],['reschedule','Reschedules'],['review','Review asks'],['unknown','Unknown / vendor / spam']];
-  return head(t,'Approval rules','default: routine items are reported, unusual items need approval')+
-  card(`<div class="tw"><table><tr><th>Item</th><th>Handling</th></tr>${rows.map(([k,l])=>`<tr><td>${l}</td><td><select data-rule="${k}" aria-label="${l}">${[['report','Do it & report'],['approve','Needs client approval'],['flag','Stop & flag']].map(([v,n])=>`<option value="${v}" ${r[k]===v?'selected':''}>${n}</option>`).join('')}</select></td></tr>`).join('')}</table></div>
-  <div class="btns"><button class="b p" data-act="saveRules">Save rules</button><button class="b" data-act="resetRules">Reset to default</button></div>`)+
-  card(`<span class="tag warn">Open decision</span> Still to agree with ${esc(t.owner)}: auto-book vs. confirm first, and which items need ${t.their} OK.`);
- },
- integrations(t){const s=t.settings;
-  return head(t,'Integrations & credentials','placeholders only — nothing connected in this prototype')+
-  card(`<div class="row"><div><b>Phone line</b><div class="small muted">${esc(s.line)}</div><div class="small">Provider: <span class="ph">TBD</span> · Number: <span class="ph">TBD</span> · API key: <span class="ph">••••••••</span></div></div><span class="tag gray">Not connected</span></div><div class="btns"><button class="b" data-act="stub">Connect phone line</button></div>`)+
-  card(`<div class="row"><div><b>Calendar</b><div class="small muted">${esc(s.calendar)}</div><div class="small">Calendar: <span class="ph">TBD</span> · Access: <span class="ph">TBD</span></div></div><span class="tag gray">Not connected</span></div><div class="btns"><button class="b" data-act="stub">Connect calendar</button></div>`)+
-  card(`<div class="small muted">Personal phone and personal texts are never connected.</div>`);
- },
- tenantview(t){S.role='client';S.view='dashboard';setTimeout(render);return '';}
 };
 function tagc(t){return {Booked:'',"Text-back":'blue',Approved:'',Rejected:'bad',Answered:'blue','You decided':'warn',Confirmed:'','Change requested':'warn',Setup:'gray'}[t]??'gray';}
-function bookingsTable(t){const b=stats(t).bookings;return b.length?card(`<div class="tw"><table class="bookings"><tr><th>Caller</th><th>Job type</th><th>Window</th><th>Status</th></tr>${b.map(l=>`<tr class="bk"><td>${tel(l.who)}${EX}</td><td>${esc(l.type||'—')}</td><td class="nw">${esc(l.win)}</td><td><span class="tag">Booked</span></td></tr>`).join('')}</table></div>`):card('<div class="empty">No upcoming windows.</div>');}
+function bookingsTable(t){const b=stats(t).bookings;return b.length?card(`<div class="tw"><table class="bookings"><tr><th>Caller</th><th>Job type</th><th>Window</th><th class="st">Status</th></tr>${b.map(l=>`<tr class="bk"><td>${tel(l.who)}${EX}</td><td>${esc(l.type||'—')}</td><td class="nw">${esc(l.win)}</td><td class="st"><span class="tag">Booked</span></td></tr>`).join('')}</table></div>`):card('<div class="empty">No upcoming windows.</div>');}
 const fb=(kind,ref)=>S.role==='client'?`<span class="fb"><button class="b sm" data-act="fb" data-id="${kind}|${ref}|up" title="Good" aria-label="Good">👍</button><button class="b sm" data-act="fb" data-id="${kind}|${ref}|down" title="Not right" aria-label="Not right">👎</button></span>`:'';
 
 // ---- Modals: auto-sized textareas, Esc closes ----
@@ -210,15 +151,4 @@ const ACT={
  flag(v){const[id,how]=v.split('|'),t=T(),i=t.flags.findIndex(x=>x.id===id),f=t.flags.splice(i,1)[0];
   const e=log(t,'You decided',`${f.title} — ${FLAG_MSG[how]}`);
   toast('Logged: '+FLAG_MSG[how],()=>{t.flags.splice(i,0,f);const j=t.log.indexOf(e);if(j>=0)t.log.splice(j,1);render();});render();},
- pause(id,el){const t=TENANTS.find(x=>x.id===id);t.paused=!el.checked;toast(`${t.name}: ${t.paused?'paused':'running'}`);render();},
- goTenant(id){S.tenant=id;S.view='settings';render();},
- reqDone(v){const[tid,rid]=v.split('|'),t=TENANTS.find(x=>x.id===tid),r=t.requests.find(x=>x.id===rid);r.status='Handled';toast('Marked handled');render();},
- saveSettings(){const s=T().settings;s.delay=+$('#delay').value;s.vmPrompt=$('#vm').checked;s.greeting=$('#greet').value;toast('Settings saved (in memory)');},
- addWin(){const v=$('#newWin').value.trim();if(v){T().settings.windows.push(v);render();}},
- delWin(i){T().settings.windows.splice(+i,1);render();},
- saveSched(){T().settings.hours=$('#hrs').value;toast('Schedule saved (in memory)');},
- saveRules(){document.querySelectorAll('[data-rule]').forEach(s=>T().rules[s.dataset.rule]=s.value);toast('Rules saved (in memory)');},
- resetRules(){Object.assign(T().rules,DEFAULT_RULES);render();toast('Reset to default');},
- stub(){toast('Placeholder — no real connection in prototype');}
 };
-if(!window.__ext)render();

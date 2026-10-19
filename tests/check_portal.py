@@ -1,7 +1,7 @@
 """Lightweight automated checks for the portal prototype.
 Run: /workspace/.pwvenv/bin/python tests/check_portal.py   (exit code 0 = all pass)
 """
-import pathlib,re,sys
+import json,pathlib,re,subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
 B=(pathlib.Path(__file__).resolve().parent.parent/'index.html').as_uri()
 TENANTS=['colby','prairie','gutter','avery']
@@ -110,6 +110,65 @@ with sync_playwright() as p:
     go(pg,f'role=client&view={v}');check(pg.locator('.exbanner').count()==1,f'11: {v} has {pg.locator(".exbanner").count()} banners')
   for v in ['overview','requests','pilot','baselineAdmin','onboardAdmin','feedback','settings']:
     go(pg,f'role=admin&view={v}');check(pg.locator('.exbanner').count()==1,f'11: admin {v} banner count')
+  # ===== 2026-10-19 review, items 2-6 =====
+  # (2) lead pill says "Texted back in", never "Replied in", and sits in the same spot on every card
+  for t in TENANTS:
+    go(m,f'role=client&tenant={t}&view=leads');txt=m.locator('#main').inner_text()
+    check('Replied in' not in txt,f'2: {t} leads still say "Replied in"')
+    n=m.locator('.lead').count();check(m.locator('.lead .speed .tag:text-matches("^Texted back in ")').count()==n,f'2: {t} not every lead card has "Texted back in"')
+    xs=m.evaluate("()=>[...document.querySelectorAll('.lead .speed .tag')].map(e=>{const c=e.closest('.lead');return Math.round(e.getBoundingClientRect().left-c.getBoundingClientRect().left-c.clientLeft)})")  # relative to card content (highlighted cards have a 4px left border)
+    check(len(set(xs))<=1,f'2: {t} speed pill moves between cards: {set(xs)}')
+  # (3) iPhone bookings table fits (no clipped Status column)
+  for t in TENANTS:
+    for v in ['dashboard','activity']:
+      go(m,f'role=client&tenant={t}&view={v}')
+      over=m.evaluate("()=>[...document.querySelectorAll('table.bookings')].filter(tb=>tb.scrollWidth>tb.parentElement.clientWidth+1||[...tb.querySelectorAll('th,td')].some(c=>c.offsetParent&&c.getBoundingClientRect().right>tb.parentElement.getBoundingClientRect().right+1)).length")
+      check(over==0,f'3: {t} {v} bookings table clipped on iPhone')
+  # (4) plurals in weekly summary, text and email
+  for t in TENANTS:
+    go(pg,f'role=client&tenant={t}&view=weekly');txt=pg.locator('#main').inner_text()
+    bad=re.findall(r'\b1 (?:missed calls|estimates|estimate windows)\b',txt)+re.findall(r'\b(?:[02-9]|\d\d+) (?:missed call|estimate|estimate window)\b(?! window)(?!s)',txt)
+    check(not bad,f'4: {t} weekly plural errors: {bad}')
+  # (5) paused / not-started pilot: no "Week 0" and no "On track"
+  go(pg,'role=client&tenant=gutter&view=pilot');txt=pg.locator('#main').inner_text()
+  check('Week 0' not in txt and 'On track' not in txt,'5: gutter pilot shows Week 0 / On track')
+  check(pg.locator('.pstatus .tag').inner_text()=='Paused','5: paused tenant status should read Paused')
+  # (6) setup steps: no checkbox emoji for the client; Approve buttons share one column
+  for page,label in [(pg,'desktop'),(m,'iPhone')]:
+    go(page,'role=client&tenant=colby&view=onboarding');txt=page.locator('#main').inner_text()
+    check('⬜' not in txt and '✅' not in txt,f'6: {label} onboarding uses checkbox emoji')
+    xs=page.evaluate("()=>[...document.querySelectorAll('.step button')].map(b=>{const r=b.getBoundingClientRect();return Math.round(r.left)+'/'+Math.round(r.right)})")
+    check(len(xs)>=2 and len(set(xs))==1,f'6: {label} setup buttons not aligned: {xs}')
+  # ===== Client-only copy (scripts/build_client.js), Colby =====
+  ROOT=pathlib.Path(__file__).resolve().parent.parent
+  slug=json.loads((ROOT/'scripts/clients.json').read_text())['colby']['slug'];CDIR=ROOT/'c'/slug
+  check((CDIR/'index.html').exists(),f'client copy missing at c/{slug}/')
+  with tempfile.TemporaryDirectory() as tmp:  # committed copy must match a fresh build
+    subprocess.run(['node',str(ROOT/'scripts/build_client.js'),'colby','--out',tmp],check=True,capture_output=True)
+    stale=[f.name for f in CDIR.iterdir() if f.read_bytes()!=(pathlib.Path(tmp)/f.name).read_bytes()]
+    check(not stale and sorted(f.name for f in CDIR.iterdir())==sorted(f.name for f in pathlib.Path(tmp).iterdir()),f'client copy is stale vs build: {stale}')
+  files={f.name:f.read_text() for f in CDIR.iterdir()};allsrc='\n'.join(files.values())
+  check(not (CDIR/'admin.js').exists(),'client copy ships admin.js')
+  go(pg,'role=admin&view=overview');others=pg.evaluate("()=>TENANTS.filter(t=>t.id!=='colby').flatMap(t=>[t.name,t.id,t.owner])")
+  for w in others: check(not re.search(r'\b'+re.escape(w)+r'\b',allsrc,re.I),f'client copy contains other tenant "{w}"')
+  for w in ['ADMIN_NAV','adminHead','Andy admin','role=admin','tenantSel','roleSeg','demoBtn','jobValue','revenue','baselineAdmin','onboardAdmin','overview(','requests(','"rules"']:
+    check(w not in allsrc,f'client copy contains admin token {w!r}')
+  check(not re.search(r'\$\s?\d',allsrc),'client copy contains a $ amount')
+  CB=(CDIR/'index.html').as_uri()
+  for q in ['','role=admin','role=admin&view=overview','tenant=avery','tenant=prairie&role=admin&view=pilot','demo=1','view=baselineAdmin','view=requests','view=onboardAdmin','view=feedback']:
+    pg.goto(f'{CB}?{q}');txt=pg.locator('body').inner_text()
+    check('Colby’s Lawn & Landscape' in txt and 'Admin view' not in txt and 'Admin (Andy only)' not in txt,f'client copy ?{q}: wrong tenant or admin view shown')
+    check(pg.evaluate("()=>typeof ADMIN_NAV==='undefined'&&TENANTS.length===1&&!document.querySelector('#tenantSel,#roleSeg,#demoBtn,#menuBtn,[data-k=revenue]')"),f'client copy ?{q}: admin code/controls present')
+    navs=pg.evaluate("()=>[...document.querySelectorAll('#nav a')].map(a=>a.dataset.v)")
+    check(set(navs)<=set(CLIENT_VIEWS),f'client copy ?{q}: non-client nav {navs}')
+  check(set(pg.evaluate("()=>Object.keys(VIEWS)"))<=set(CLIENT_VIEWS),'client copy defines admin views')
+  for v in CLIENT_VIEWS:
+    pg.goto(f'{CB}?view={v}&role=admin');t2=pg.locator('body').inner_text()
+    check(not re.search(r'\$\s?\d',t2),f'client copy {v}: $ amount visible')
+  pg.goto(f'{CB}?view=dashboard');cd=(k(pg,'texted'),k(pg,'booked'))
+  go(pg,'role=client&tenant=colby&view=dashboard');check(cd==(k(pg,'texted'),k(pg,'booked')),'client copy counts differ from prototype')
+  pg.goto(f'{CB}?view=approvals');pg.click('[data-act=suggest] >> nth=0');pg.fill('#sg','x');pg.click('[data-act=doSuggest]')
+  check('Sent to Andy' in pg.locator('#toast').inner_text(),'client copy: Suggest a change flow broken')
   check(not errs,f'page errors: {errs}')
   b.close()
 print(f'\n{passes} passed, {len(fails)} failed')

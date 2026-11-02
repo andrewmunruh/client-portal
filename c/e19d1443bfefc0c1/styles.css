@@ -84,7 +84,7 @@ label.chk{display:inline-flex;gap:8px;align-items:center}
 }
 
 /* --- polish 2026-11-02 --- */
-.pnote{display:none}
+.pnote,.brand .pnote{display:none} /* phone-only; beats .brand small{display:block} */
 .steprow .act .tag{white-space:nowrap}
 @media (pointer:coarse),(max-width:760px){
   /* whole label is the tap target; checkbox sits centred in a 44x44 box */
@@ -96,6 +96,7 @@ label.chk{display:inline-flex;gap:8px;align-items:center}
   .proto{display:none}
   .top{padding:2px 12px}.brand{min-width:0}.brand>div{min-width:0;line-height:1.2}
   .brand b,.brand small{white-space:nowrap}.brand small{font-size:11px}
+  #menuBtn{white-space:nowrap;flex-shrink:0;padding-left:10px;padding-right:10px}.top{gap:6px}.brand{gap:8px}
   .brand .pnote{display:block;margin-left:0;color:var(--ink);overflow:hidden;text-overflow:ellipsis}
   body.demo .pnote{display:none}
   nav{padding:2px 8px}

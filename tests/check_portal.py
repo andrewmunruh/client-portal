@@ -230,6 +230,28 @@ with sync_playwright() as p:
   check(m.locator('#tenantSel').is_visible() and m.locator('#roleSeg').is_visible(),'N5b: phone menu no longer opens controls')
   check(m.evaluate("()=>document.querySelector('#menuBtn').getBoundingClientRect().height")>=44,'N5b: menu button < 44px')
   pg.goto(f'{B}?role=client&tenant=colby');check(pg.locator('.proto').is_visible(),'N5b: desktop proto bar should stay')
+  # R1 (review of 6619836): the header note is phone-only; desktop header back to main's height (57px .top)
+  for eng in ['chromium','webkit']:
+    bx=getattr(p,eng).launch()
+    dc=bx.new_context(viewport={'width':1280,'height':800},device_scale_factor=2);dp=dc.new_page()
+    for u in [f'{B}?role=client&tenant=colby&view=dashboard',f'{B}?role=admin',CB]:
+      dp.goto(u);r=dp.evaluate("()=>({vis:[...document.querySelectorAll('.pnote')].some(e=>e.getClientRects().length>0),top:document.querySelector('.top').getBoundingClientRect().height,proto:getComputedStyle(document.querySelector('.proto')).display})")
+      check(not r['vis'],f'R1: {eng} 1280 header note visible under the brand on {u}')
+      check(r['top']<=(60 if eng=='chromium' else 66),f'R1: {eng} 1280 header {r["top"]:.0f}px, expected ~57 (WebKit ~64, same as main) on {u}')
+      check(r['proto']!='none',f'R1: {eng} 1280 top example-data bar hidden on {u}')
+    dc.close()
+    # N5b extended: phone header at 375 and 390, Chromium and WebKit; Prototype button on one line
+    for w,h in [(375,812),(390,844)]:
+      kw=dict(viewport={'width':w,'height':h},device_scale_factor=2,has_touch=True)
+      if eng=='chromium':kw['is_mobile']=True
+      mc=bx.new_context(**kw);mp=mc.new_page()
+      for u in [f'{B}?role=client&tenant=colby&view=dashboard',f'{B}?role=admin',CB]:
+        mp.goto(u);r=mp.evaluate("()=>{const n=document.querySelector('.top .pnote'),mb=document.querySelector('#menuBtn');return {nav:document.querySelector('nav').getBoundingClientRect().bottom,note:n&&n.getClientRects().length>0,cut:n?n.scrollWidth>n.clientWidth+1:true,mb:mb&&mb.getClientRects().length?mb.getBoundingClientRect().height:0}}")
+        check(r['nav']<=100,f'N5b: {eng} {w} phone header {r["nav"]:.0f}px > 100 on {u}')
+        check(r['note'] and not r['cut'],f'N5b: {eng} {w} example-data note hidden or cut off on {u}')
+        check(r['mb']==0 or r['mb']<=46,f'N5b: {eng} {w} Prototype button wraps ({r["mb"]:.0f}px) on {u}')
+      mc.close()
+    bx.close()
   check(not errs,f'page errors: {errs}')
   b.close()
 print(f'\n{passes} passed, {len(fails)} failed')

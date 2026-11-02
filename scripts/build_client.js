@@ -7,6 +7,7 @@
 // prototype's ?role= / ?tenant= / ?demo= handling lives only in admin.js, so the copy ignores those params.
 const fs=require('fs'),path=require('path'),vm=require('vm'),crypto=require('crypto');
 const ROOT=path.resolve(__dirname,'..');
+const htmlEsc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\s+/g,' ').trim();
 const args=process.argv.slice(2);const oi=args.indexOf('--out');
 const outArg=oi>=0?args[oi+1]:null;const tid=(args.filter((a,i)=>!a.startsWith('--')&&i!==oi+1)[0])||'colby';
 
@@ -38,12 +39,12 @@ const files={
  'index.html':`<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>${t.name.replace(/[<&]/g,'')} — bot portal (preview)</title>
+<title>${htmlEsc(t.name)} — bot portal (preview)</title>
 <link rel="stylesheet" href="styles.css"></head>
 <body>
 <div class="proto"><span class="full">Preview · all numbers and records are <b>example data</b> · changes reset on reload</span><span class="short">Preview · <b>example data</b> · resets on reload</span></div>
 <header class="top">
-  <div class="brand"><span class="dot"></span><div><b>Back-office bots</b><small>run by Andy Unruh</small></div></div>
+  <div class="brand"><span class="dot"></span><div><b>Back-office bots</b><small>run by Andy Unruh</small><small class="pnote">Preview · <b>example data</b> · resets on reload</small></div></div>
 </header>
 <div class="shell">
   <nav id="nav"></nav>

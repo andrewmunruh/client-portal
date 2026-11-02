@@ -15,7 +15,7 @@ const STEPS=[
   {k:'area',l:'Set service area & bookable windows',owner:'andy'},
   {k:'templates',l:'Approve the text templates',owner:'client'},
   {k:'tone',l:'Approve the tone',owner:'client'},
-  {k:'baseline',l:'Starting numbers (Andy records, you confirm)',owner:'client'}
+  {k:'baseline',l:'Confirm your starting numbers',owner:'client'}
 ];
 const DEFAULT_RULES={routineText:'report',routineBooking:'report',pricing:'approve',complaint:'approve',reschedule:'approve',review:'approve',unknown:'flag'};
 function mk(o){return Object.assign({paused:false,fake:false,demo:false,approvals:[],questions:[],confirms:[],flags:[],log:[],leads:[],requests:[],feedback:[],

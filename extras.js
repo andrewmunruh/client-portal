@@ -49,10 +49,10 @@ Object.assign(VIEWS,{
   return head(t,'Getting set up','steps to go live — Andy does most of them')+card(`<div class="bar"><div style="width:${pct(done,STEPS.length)}%"></div></div><div class="small">${done} of ${STEPS.length} done</div>`)+
   STEPS.map(s=>{const ok=stepDone(t,s.k),mine=s.owner==='client';let right;
    if(ok)right='<span class="tag">Done</span>';
-   else if(s.k==='baseline')right=t.baseline&&!t.baseline.flagged?'<button class="b p" data-v="baseline">Review numbers</button>':`<span class="tag gray">${t.baseline?'With Andy':'Andy’s step'}</span>`;
+   else if(s.k==='baseline')right=t.baseline&&!t.baseline.flagged?'<button class="b p" data-v="baseline">Review numbers</button>':`<span class="tag gray">${t.baseline?'With Andy':'Waiting on Andy'}</span>`;
    else if(mine)right=`<button class="b p" data-act="step" data-id="${s.k}">Approve</button>`;
    else right=POLICY.clientMarksAndySteps?`<button class="b" data-act="step" data-id="${s.k}">Mark done</button>`:'<span class="tag gray">Andy’s step · in progress</span>';
-   return card(`<div class="steprow"><span class="si ${ok?'done':''}" role="img" aria-label="${ok?'Done':'Not done yet'}">${ok?'✓':''}</span><div><b>${s.l}</b><div class="small muted">${s.owner==='andy'?'Andy does this':'Needs your OK'}</div>${s.k==='templates'?`<div class="small muted">“${esc(t.settings.greeting)}”</div>`:''}</div><div class="act">${right}</div></div>`,'step step-'+s.owner);}).join('');
+   return card(`<div class="steprow"><span class="si ${ok?'done':''}" role="img" aria-label="${ok?'Done':'Not done yet'}">${ok?'✓':''}</span><div><b>${s.l}</b><div class="small muted">${s.owner==='andy'?'Andy does this':s.k==='baseline'?'Needs your OK · Andy enters them first':'Needs your OK'}</div>${s.k==='templates'?`<div class="small muted">“${esc(t.settings.greeting)}”</div>`:''}</div><div class="act">${right}</div></div>`,'step step-'+s.owner);}).join('');
  },
  later(t){const n=t.finishedJobs,q=t.openQuotes,inv=t.doneInvoices;
   const prev=[[LATER[0],`You have ${q}${EX} quotes with no reply. Follow-ups could have nudged all ${q} two days later.`,`Hi! Just checking in on the estimate ${t.owner} sent — any questions?`],

@@ -82,3 +82,21 @@ label.chk{display:inline-flex;gap:8px;align-items:center}
   table.bookings td,table.bookings th{padding:8px 6px}
   .steprow{grid-template-columns:22px 1fr 112px;gap:8px}
 }
+
+/* --- polish 2026-11-02 --- */
+.pnote{display:none}
+.steprow .act .tag{white-space:nowrap}
+@media (pointer:coarse),(max-width:760px){
+  /* whole label is the tap target; checkbox sits centred in a 44x44 box */
+  label.chk{min-height:44px;gap:0;padding-right:6px}label.chk input{margin:11px;flex-shrink:0}
+}
+@media(max-width:760px){
+  .steprow{grid-template-columns:22px 1fr 146px}
+  /* header: example-data note moves into the brand block, saving the separate bar */
+  .proto{display:none}
+  .top{padding:2px 12px}.brand{min-width:0}.brand>div{min-width:0;line-height:1.2}
+  .brand b,.brand small{white-space:nowrap}.brand small{font-size:11px}
+  .brand .pnote{display:block;margin-left:0;color:var(--ink);overflow:hidden;text-overflow:ellipsis}
+  body.demo .pnote{display:none}
+  nav{padding:2px 8px}
+}

@@ -169,6 +169,67 @@ with sync_playwright() as p:
   go(pg,'role=client&tenant=colby&view=dashboard');check(cd==(k(pg,'texted'),k(pg,'booked')),'client copy counts differ from prototype')
   pg.goto(f'{CB}?view=approvals');pg.click('[data-act=suggest] >> nth=0');pg.fill('#sg','x');pg.click('[data-act=doSuggest]')
   check('Sent to Andy' in pg.locator('#toast').inner_text(),'client copy: Suggest a change flow broken')
+  # ===== Nov 2 review items =====
+  # N1: client-copy title keeps the "&", HTML-escaped, no double space
+  raw=re.search(r'<title>(.*?)</title>',files['index.html']).group(1)
+  check(raw=='Colby’s Lawn &amp; Landscape — bot portal (preview)',f'N1: raw title wrong: {raw!r}')
+  check('  ' not in raw,'N1: title has a double space')
+  for q in ['','role=admin']:
+    pg.goto(f'{CB}?{q}');check(pg.title()=='Colby’s Lawn & Landscape — bot portal (preview)',f'N1: document.title wrong: {pg.title()!r}')
+  # N2: setup pills fit on one line at 390px (prototype every tenant + client copy)
+  PILL="()=>[...document.querySelectorAll('.steprow .act .tag')].map(e=>{const r=e.getBoundingClientRect(),c=e.closest('.card').getBoundingClientRect();return {t:e.textContent,lines:e.getClientRects().length,h:r.height,over:e.scrollWidth>e.clientWidth+1,out:r.right>c.right+0.5}})"
+  seen_andy=False
+  for u in [f'{B}?role=client&tenant={x}&view=onboarding' for x in ['colby','prairie','gutter','avery']]+[f'{CB}?view=onboarding']:
+    m.goto(u);ps=m.evaluate(PILL)
+    for x in ps:
+      seen_andy|=x['t']=='Andy’s step · in progress'
+      check(x['lines']==1 and x['h']<28 and not x['over'] and not x['out'],f'N2: pill wraps/clips at 390: {x} on {u}')
+  check(seen_andy,'N2: "Andy’s step · in progress" pill not found on phone')
+  # N3: every setup step has exactly one owner
+  OWN="()=>[...document.querySelectorAll('.step')].map(e=>({l:e.querySelector('b').textContent,sub:e.querySelector('.small.muted').textContent,act:e.querySelector('.act').textContent}))"
+  for x in ['colby','prairie','gutter','avery']:
+    for pgx in (pg,m):
+      pgx.goto(f'{B}?role=client&tenant={x}&view=onboarding')
+      for st in pgx.evaluate(OWN):
+        andy='Andy does this' in st['sub'];you='Needs your OK' in st['sub']
+        check(andy!=you,f'N3: {x} step {st["l"]!r} owner unclear: {st["sub"]!r}')
+        check(not (you and 'Andy’s step' in st['act']),f'N3: {x} step {st["l"]!r} shows two owners ({st["sub"]!r} + {st["act"]!r})')
+        check(not (andy and 'Approve' in st['act']),f'N3: {x} step {st["l"]!r} Andy step asks client to approve')
+  go(pg,'role=client&tenant=colby&view=onboarding');bl=[s for s in pg.evaluate(OWN) if 'starting numbers' in s['l'].lower()]
+  check(len(bl)==1 and 'Needs your OK' in bl[0]['sub'] and 'Andy enters' in bl[0]['sub'] and 'Waiting on Andy' in bl[0]['act'],f'N3: baseline step (no numbers yet) wrong: {bl}')
+  go(pg,'role=client&tenant=prairie&view=onboarding');bl=[s for s in pg.evaluate(OWN) if 'starting numbers' in s['l'].lower()]
+  check(len(bl)==1 and 'Review numbers' in bl[0]['act'],f'N3: baseline step (numbers entered) should ask client to review: {bl}')
+  check(pg.evaluate("()=>POLICY.clientEntersBaseline")==False,'N3: client must not enter the baseline')
+  # N4: separator before the Example tenant / Demo tag everywhere it follows text
+  for q in ['role=admin&tenant=gutter&view=settings','role=client&tenant=gutter&view=dashboard','role=client&tenant=avery&view=dashboard','role=admin&view=overview']:
+    go(pg,q);txt=pg.locator('main').inner_text()
+    check(not re.search(r'[^·\s] +(Example tenant|Demo)\b',txt.replace('Demo mode','')),f'N4: missing separator on ?{q}')
+  go(pg,'role=admin&tenant=gutter&view=settings')
+  check('Northside Gutters · Example City · Example tenant' in pg.locator('main .sub').first.inner_text(),'N4: gutter header lacks separator')
+  # N5a: admin settings checkbox tap target >= 44px on phone and iPad, whole box toggles
+  ipc=b.new_context(viewport={'width':820,'height':1180},device_scale_factor=2,is_mobile=True,has_touch=True);ip=ipc.new_page()
+  for nm,pgx in [('phone',m),('iPad',ip)]:
+    pgx.goto(f'{B}?role=admin&tenant=colby&view=settings')
+    r=pgx.evaluate("()=>{const l=document.querySelector('label.chk'),i=l.querySelector('input').getBoundingClientRect(),r=l.getBoundingClientRect();return {w:r.width,h:r.height,x:r.left,y:r.top,ix:i.left,iy:i.top,iw:i.width,ih:i.height}}")
+    check(r['h']>=44 and r['w']>=44,f'N5a: {nm} checkbox label {r["w"]:.0f}x{r["h"]:.0f} < 44')
+    check(r['ix']+r['iw']<=r['x']+44.5 and r['iy']>=r['y']-0.5 and r['iy']+r['ih']<=r['y']+r['h']+0.5,f'N5a: {nm} checkbox not inside its 44px box: {r}')
+    before=pgx.evaluate("()=>document.querySelector('label.chk input').checked")
+    for (dx,dy) in [(2,2),(42,r['h']-2)]:
+      pgx.mouse.click(r['x']+dx,r['y']+dy)
+    pgx.mouse.click(r['x']+2,r['y']+r['h']-2)
+    check(pgx.evaluate("()=>document.querySelector('label.chk input').checked")!=before,f'N5a: {nm} corners of 44px box do not toggle checkbox')
+  ipc.close()
+  # N5b: phone header shorter than 127px, functions kept
+  for u in [f'{B}?role=client&tenant=colby&view=dashboard',f'{CB}']:
+    m.goto(u);hb=m.evaluate("()=>document.querySelector('nav').getBoundingClientRect().bottom")
+    check(hb<=100,f'N5b: phone header {hb:.0f}px > 100 on {u}')
+    check('example data' in m.locator('.top .pnote').inner_text() and m.locator('.top .pnote').is_visible(),f'N5b: example-data notice missing from phone header on {u}')
+    navh=m.evaluate("()=>Math.min(...[...document.querySelectorAll('nav a')].map(a=>a.getBoundingClientRect().height))")
+    check(navh>=44,f'N5b: phone nav item {navh}px < 44')
+  m.goto(f'{B}?role=client&tenant=colby&view=dashboard');m.click('#menuBtn')
+  check(m.locator('#tenantSel').is_visible() and m.locator('#roleSeg').is_visible(),'N5b: phone menu no longer opens controls')
+  check(m.evaluate("()=>document.querySelector('#menuBtn').getBoundingClientRect().height")>=44,'N5b: menu button < 44px')
+  pg.goto(f'{B}?role=client&tenant=colby');check(pg.locator('.proto').is_visible(),'N5b: desktop proto bar should stay')
   check(not errs,f'page errors: {errs}')
   b.close()
 print(f'\n{passes} passed, {len(fails)} failed')

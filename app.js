@@ -57,7 +57,7 @@ document.addEventListener('click',e=>{
   const b=e.target.closest('[data-act]');if(b){ACT[b.dataset.act](b.dataset.id,b);}
 });
 
-function tenantTag(t){return t.demo?' <span class="tag gray">Demo</span>':t.fake?' <span class="tag gray">Example tenant</span>':'';}
+function tenantTag(t){return t.demo?' · <span class="tag gray">Demo</span>':t.fake?' · <span class="tag gray">Example tenant</span>':'';}
 function head(t,title,sub){
   return `${HOOKS.banner()}
   ${t.paused?'<div class="banner paused small"><b>Bot paused.</b> Missed calls are not being texted back right now.</div>':''}
